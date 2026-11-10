@@ -57,7 +57,10 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0}
 .info{flex:1;color:var(--sub);font-size:13px;min-width:200px}
 .info b{color:var(--ink)}
 .stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:10px 16px 16px;position:relative}
-#pv{box-shadow:0 6px 30px rgba(60,40,20,.15);border-radius:2px;cursor:pointer;background:#fff}
+#pv{box-shadow:0 6px 30px rgba(60,40,20,.15);border-radius:2px;background:#fff;touch-action:none}
+.tb{position:absolute;display:none;gap:2px;background:var(--ink);border-radius:99px;padding:4px;box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:3;white-space:nowrap}
+.tb button{border:0;background:none;color:#fff;-webkit-text-fill-color:#fff;font:inherit;font-size:13px;padding:5px 10px;border-radius:99px;cursor:pointer}
+.tb button:hover{background:rgba(255,255,255,.15)}
 .pager{display:flex;gap:4px;align-items:center}
 .hint{color:var(--sub);font-size:12px;padding:0 16px 12px;text-align:center}
 .modal{position:fixed;inset:0;background:rgba(20,18,15,.55);display:none;align-items:center;justify-content:center;z-index:10;padding:16px}
@@ -100,7 +103,9 @@ input[type=range]{flex:1;min-width:140px;accent-color:var(--acc)}
   <section class="sec">
     <h3>① 选模板</h3>
     <div class="row"><label>相纸</label><div class="chips" id="tPaper"></div></div>
-    <div class="row"><label>每张放</label><div class="chips" id="tCount"></div></div>
+    <div class="row"><label>尺寸</label>
+      <div class="seg" id="tSize"><button data-v="std">标准 5×5cm</button><button data-v="fit">按数量排满</button></div></div>
+    <div class="row" id="tCountRow"><label>每张放</label><div class="chips" id="tCount"></div></div>
     <div class="row"><label>形状</label>
       <div class="seg" id="tShape"><button data-v="square">方形</button><button data-v="round">圆角</button><button data-v="circle">圆形</button><button data-v="fill">铺满长方</button></div></div>
     <div class="row"><label>间隙</label>
@@ -163,8 +168,9 @@ input[type=range]{flex:1;min-width:140px;accent-color:var(--acc)}
     <button class="btn" id="jpgBtn">当前页 JPG</button>
     <button class="btn pri" id="pdfBtn">导出 PDF（全部页）</button>
   </div>
-  <div class="stage" id="stage"><canvas id="pv"></canvas></div>
-  <div class="hint">点相纸上任意一张即可调整裁剪 · 打印 PDF 时请选「实际大小 / 100%」，不要选「适合页面」</div>
+  <div class="stage" id="stage"><canvas id="pv"></canvas>
+    <div class="tb" id="tb"><button data-t="-" title="缩小">－</button><button data-t="+" title="放大">＋</button><button data-t="r" title="旋转90°">⟳</button><button data-t="f" title="水平翻转">⇋</button><button data-t="e" title="打开大窗口精调">✂️ 精调</button><button data-t="x" title="重置">重置</button></div></div>
+  <div class="hint">在框里直接拖动调位置，滚轮/双指缩放，双击打开精调 · 打印 PDF 时请选「实际大小 / 100%」，不要选「适合页面」</div>
 </main>
 </div>
 
@@ -202,7 +208,7 @@ input[type=range]{flex:1;min-width:140px;accent-color:var(--acc)}
 const $=s=>document.querySelector(s);
 const PAPERS=[["5寸 (3R)",89,127],["6寸 (4R)",102,152],["7寸 (5R)",127,178],["A6",105,148],["A5",148,210],["A4",210,297],["自定义",0,0]];
 const MPRE=[["方形 50×50","rect",50,50,0],["圆角方 50×50","round",50,50,6],["圆形 Ø58","ellipse",58,58,0],["圆形 Ø44","ellipse",44,44,0],["长方 54×86","round",54,86,3],["长方 60×90","rect",60,90,0],["椭圆 50×70","ellipse",50,70,0]];
-const DEF={shape:"rect",w:50,h:50,r:0,bleed:0,gap:2,margin:3,pw:102,ph:152,orient:"auto",marks:"outline",dpi:300,tplOn:true,auto:true,T:{paper:1,count:6,shape:"square",gap:2}};
+const DEF={shape:"rect",w:50,h:50,r:0,bleed:0,gap:2,margin:3,pw:102,ph:152,orient:"auto",marks:"outline",dpi:300,tplOn:true,auto:true,T:{paper:1,count:6,shape:"square",gap:2,size:"std"}};
 let S=Object.assign({},DEF);
 try{const sv=JSON.parse(localStorage.getItem("magnetS")||"null");if(sv)Object.assign(S,sv)}catch(e){}
 let items=[],page=0,uid=0;
@@ -282,15 +288,39 @@ function doRender(){
   pvK=Math.max(.5,Math.min(aw/G.pw,(ah>100?ah:aw*1.5)/G.ph));
   const cv=$("#pv");cv.style.width=G.pw*pvK+"px";cv.style.height=G.ph*pvK+"px";
   cv.width=Math.round(G.pw*pvK*dpr);cv.height=Math.round(G.ph*pvK*dpr);
-  renderPage(cv.getContext("2d"),G,page,pvK*dpr,true);
+  renderPage(cv.getContext("2d"),G,page,pvK*dpr,true);drawSel(cv.getContext("2d"),pvK*dpr);
   const o=G.pw>G.ph?"横放":"竖放";
   $("#info").innerHTML=G.n?`每页可放 <b>${G.n}</b> 个（${G.cols}×${G.rows}，${o}）· 已排 <b>${G.seq.length}</b> 个 · 共 <b>${G.pages}</b> 页`:`<b style="color:var(--acc)">冰箱贴太大，这张相纸放不下</b>`;
   const pg=$("#pager");pg.innerHTML="";
-  if(G.pages>1)for(let i=0;i<G.pages;i++){const bt=document.createElement("button");bt.className="btn"+(i===page?" dark":"");bt.textContent="第"+(i+1)+"页";bt.style.padding="5px 9px";bt.onclick=()=>{page=i;render()};pg.appendChild(bt)}
+  if(G.pages>1)for(let i=0;i<G.pages;i++){const bt=document.createElement("button");bt.className="btn"+(i===page?" dark":"");bt.textContent="第"+(i+1)+"页";bt.style.padding="5px 9px";bt.onclick=()=>{page=i;sel=-1;render()};pg.appendChild(bt)}
   renderList();syncUI();
 }
-$("#pv").addEventListener("click",e=>{if(!G)return;const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/pvK,y=(e.clientY-r.top)/pvK;
-  G.cells.forEach((c,i)=>{if(Math.abs(x-c.x)<=G.cw/2&&Math.abs(y-c.y)<=G.ch/2){const it=G.seq[page*G.n+i];if(it)openEd(it);else $("#file").click()}})});
+let sel=-1,pdrag=null,pz0=1,pd0=1;const pp=new Map(),pv=$("#pv");
+function hitCell(e){if(!G)return -1;const r=pv.getBoundingClientRect(),x=(e.clientX-r.left)/pvK,y=(e.clientY-r.top)/pvK;return G.cells.findIndex(c=>Math.abs(x-c.x)<=G.cw/2&&Math.abs(y-c.y)<=G.ch/2)}
+const itAt=i=>i>=0&&G?G.seq[page*G.n+i]:null,selIt=()=>itAt(sel);
+pv.addEventListener("pointerdown",e=>{const i=hitCell(e);pp.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pp.size===2){const[a,b]=[...pp.values()];pd0=Math.hypot(a.x-b.x,a.y-b.y)||1;const it=selIt();pz0=it?it.zoom:1;return}
+  pdrag={i,dist:0};sel=itAt(i)?i:-1;if(sel>=0)pv.setPointerCapture(e.pointerId);render()});
+pv.addEventListener("pointermove",e=>{
+  if(!pp.has(e.pointerId)){const i=hitCell(e);pv.style.cursor=itAt(i)?"grab":i>=0?"copy":"default";return}
+  const p=pp.get(e.pointerId),dx=e.clientX-p.x,dy=e.clientY-p.y;pp.set(e.pointerId,{x:e.clientX,y:e.clientY});const it=selIt();if(!it)return;
+  if(pp.size===2){const[a,b]=[...pp.values()];it.zoom=Math.max(.3,Math.min(5,pz0*Math.hypot(a.x-b.x,a.y-b.y)/pd0))}
+  else if(pdrag){pdrag.dist+=Math.abs(dx)+Math.abs(dy);pv.style.cursor="grabbing";it.ox+=dx/pvK/G.cw;it.oy+=dy/pvK/G.ch}
+  clampIt(it);render()});
+function pEnd(e){pp.delete(e.pointerId);if(pdrag&&pdrag.dist<4&&pdrag.i>=0&&!itAt(pdrag.i))$("#file").click();if(!pp.size)pdrag=null}
+pv.addEventListener("pointerup",pEnd);pv.addEventListener("pointercancel",pEnd);
+pv.addEventListener("dblclick",e=>{const it=itAt(hitCell(e));if(it)openEd(it)});
+pv.addEventListener("wheel",e=>{const i=hitCell(e),it=itAt(i);if(!it)return;e.preventDefault();sel=i;it.zoom=Math.max(.3,Math.min(5,it.zoom*Math.exp(-e.deltaY*.0015)));clampIt(it);render()},{passive:false});
+$("#stage").addEventListener("pointerdown",e=>{if(e.target.id==="stage"){sel=-1;render()}});
+$("#tb").onclick=e=>{const t=e.target.dataset.t,it=selIt();if(!t||!it)return;
+  if(t==="+")it.zoom=Math.min(5,it.zoom*1.1);if(t==="-")it.zoom=Math.max(.3,it.zoom/1.1);if(t==="r")it.rot=(it.rot+90)%360;if(t==="f")it.flip=!it.flip;
+  if(t==="x")Object.assign(it,{zoom:1,ox:0,oy:0,rot:0,flip:false});if(t==="e")return openEd(it);clampIt(it);render()};
+function drawSel(ctx,k){const tb=$("#tb");if(!G||sel>=G.n||!selIt()){sel=-1;tb.style.display="none";return}
+  const c=G.cells[sel];ctx.save();ctx.strokeStyle="#e8553d";ctx.lineWidth=2.5*(window.devicePixelRatio||1);pathShape(ctx,c.x*k,c.y*k,S.w*k,S.h*k,S.r*k,S.shape);ctx.stroke();ctx.restore();
+  tb.style.display="flex";const w=tb.offsetWidth,st=$("#stage");
+  let left=pv.offsetLeft+c.x*pvK-w/2,top=pv.offsetTop+(c.y+G.ch/2)*pvK+6;
+  if(top+40>st.clientHeight)top=pv.offsetTop+(c.y-G.ch/2)*pvK-44;
+  tb.style.left=Math.max(4,Math.min(st.clientWidth-w-4,left))+"px";tb.style.top=Math.max(4,top)+"px"}
 window.addEventListener("resize",render);
 
 /* ---------- 图片列表 ---------- */
@@ -315,7 +345,7 @@ function renderList(){
 }
 function addFiles(files){
   [...files].filter(f=>f.type.startsWith("image/")).forEach(f=>{const url=URL.createObjectURL(f),img=new Image();
-    img.onload=()=>{items.push({id:++uid,name:f.name||"粘贴的图片",img,url,count:1,zoom:1,ox:0,oy:0,rot:0,flip:false});render()};
+    const id=++uid;img.onload=()=>{items.push({id,name:f.name||"粘贴的图片",img,url,count:1,zoom:1,ox:0,oy:0,rot:0,flip:false});items.sort((x,y)=>x.id-y.id);render()};
     img.onerror=()=>toast("这张图片打不开："+(f.name||""));img.src=url});
 }
 $("#drop").onclick=()=>$("#file").click();
@@ -341,7 +371,13 @@ function tplOpts(){const T=S.T,p=PAPERS[T.paper],a=p[1],b=p[2],m=3,g=+T.gap,o=ne
   GRIDS.forEach(([c,r])=>{let w=Math.floor((a-2*m-(c-1)*g)/c*2)/2,h=Math.floor((b-2*m-(r-1)*g)/r*2)/2;if(T.shape!=="fill")w=h=Math.min(w,h);
     const n=fitN(a,b,w,h,g,m);if(n<1||w<15)return;const pv=o.get(n);if(!pv||w*h>pv.w*pv.h)o.set(n,{n,w,h})});
   return [...o.values()].sort((x,y)=>x.n-y.n)}
-function applyTpl(){const T=S.T,p=PAPERS[T.paper],m=3,g=+T.gap,a=p[1],b=p[2],opts=tplOpts();
+function applyTpl(){const T=S.T,p=PAPERS[T.paper],m=3,g=+T.gap,a=p[1],b=p[2];
+  if(!T.size)T.size="std";
+  const shp=T.shape==="circle"?"ellipse":T.shape==="round"?"round":"rect";
+  if(T.size==="std"){const W=50,c=Math.floor(a/W),r=Math.floor(b/W);
+    if(c&&r){const gx=c>1?(a-c*W)/(c-1):99,gy=r>1?(b-r*W)/(r-1):99,g2=Math.floor(Math.min(g,gx,gy)*10)/10;
+      Object.assign(S,{pw:a,ph:b,orient:"p",gap:g2,margin:0,bleed:0,w:W,h:W,shape:shp,r:shp==="round"?6:0,tplOn:true});items.forEach(clampIt);return}}
+  const opts=tplOpts();
   let o=opts.find(x=>x.n===T.count);if(!o){o=opts.reduce((x,y)=>Math.abs(y.n-T.count)<Math.abs(x.n-T.count)?y:x);T.count=o.n}
   const w=o.w,h=o.h;
   Object.assign(S,{pw:a,ph:b,orient:"p",gap:g,margin:m,bleed:0,w,h,shape:T.shape==="circle"?"ellipse":T.shape==="round"?"round":"rect",r:T.shape==="round"?Math.round(w*.12):0,tplOn:true});
@@ -350,6 +386,7 @@ function tChip(box,label,on,fn){const b=document.createElement("button");b.class
 TPAPER.forEach(([i,n])=>tChip($("#tPaper"),n,()=>S.T.paper===i,()=>S.T.paper=i));
 function buildCounts(){const box=$("#tCount");box.innerHTML="";tplOpts().forEach(o=>tChip(box,o.n+"个",()=>S.T.count===o.n,()=>S.T.count=o.n))}
 document.querySelectorAll("#tShape button").forEach(b=>b.onclick=()=>{S.T.shape=b.dataset.v;applyTpl();render()});
+document.querySelectorAll("#tSize button").forEach(b=>b.onclick=()=>{S.T.size=b.dataset.v;if(S.T.size==="std"&&S.T.shape==="fill")S.T.shape="square";applyTpl();render()});
 document.querySelectorAll("#tGap button").forEach(b=>b.onclick=()=>{S.T.gap=+b.dataset.v;applyTpl();render()});
 $("#autoChk").onchange=e=>{S.auto=e.target.checked;render()};
 function syncUI(){
@@ -357,8 +394,12 @@ function syncUI(){
   document.querySelectorAll("#tPaper .chip,#tCount .chip").forEach(b=>b.classList.toggle("on",S.tplOn&&b._on()));
   document.querySelectorAll("#tShape button").forEach(b=>b.classList.toggle("on",S.tplOn&&b.dataset.v===S.T.shape));
   document.querySelectorAll("#tGap button").forEach(b=>b.classList.toggle("on",S.tplOn&&+b.dataset.v===+S.T.gap));
+  const std=S.T.size==="std";
+  document.querySelectorAll("#tSize button").forEach(b=>b.classList.toggle("on",S.tplOn&&b.dataset.v===S.T.size));
+  $("#tCountRow").style.display=std?"none":"";$('#tShape button[data-v=fill]').style.display=std?"none":"";
   const ts=$("#tSum");ts.classList.toggle("off",!S.tplOn);
-  ts.textContent=S.tplOn?`→ 每个 ${S.w}×${S.h}mm，一张排 ${G?G.n:"-"} 个`:"正在使用高级自定义参数，点上面任意选项可切回模板";
+  ts.textContent=!S.tplOn?"正在使用高级自定义参数，点上面任意选项可切回模板":
+    `→ 每个 ${S.w}×${S.h}mm，一张排 ${G?G.n:"-"} 个，间隙 ${S.gap}mm`+(std&&S.gap<+S.T.gap?`（这张纸放 5cm 最多只能留 ${S.gap}mm）`:"");
   $("#autoChk").checked=!!S.auto;$("#fillBtn").style.display=S.auto?"none":"";
   document.querySelectorAll("input[data-k]").forEach(inp=>{if(document.activeElement!==inp)inp.value=S[inp.dataset.k]});
   [["#shapeSeg","shape"],["#orientSeg","orient"],["#marksSeg","marks"],["#dpiSeg","dpi"]].forEach(([id,k])=>document.querySelectorAll(id+" button").forEach(b=>b.classList.toggle("on",b.dataset.v==String(S[k]))));
@@ -430,6 +471,7 @@ $("#pdfBtn").onclick=async()=>{
   saveBlob(doc.output("blob"),`冰箱贴_${paperName(g)}_${g.pages}页.pdf`,false);
 };
 
+if(S.T&&!S.T.size)S.T.size="std";if(S.T.size==="std"&&S.T.shape==="fill")S.T.shape="square";
 if(S.tplOn)applyTpl();
 doRender();
 </script>
